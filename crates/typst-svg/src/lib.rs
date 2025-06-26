@@ -1,6 +1,7 @@
 //! Rendering of Typst documents into SVG images.
 
 mod image;
+mod link;
 mod paint;
 mod shape;
 mod text;
@@ -204,18 +205,22 @@ impl SVGRenderer {
             self.xml.write_attribute("transform", &SvgMatrix(ts));
         }
 
+        let mut last_pos: Option<(f64, f64)> = None;
+
         for (pos, item) in frame.items() {
             // File size optimization.
             // TODO: SVGs could contain links, couldn't they?
-            if matches!(item, FrameItem::Link(_, _) | FrameItem::Tag(_)) {
+            if matches!(item, FrameItem::Tag(_)) {
                 continue;
             }
+            let (x,y) = (pos.x.to_pt(), pos.y.to_pt());
 
-            let x = pos.x.to_pt();
-            let y = pos.y.to_pt();
-            self.xml.start_element("g");
-            self.xml
-                .write_attribute_fmt("transform", format_args!("translate({x} {y})"));
+            if !matches!(item, FrameItem::Link(_, _)) {
+                self.xml.start_element("g");
+                self.xml
+                    .write_attribute_fmt("transform", format_args!("translate({x} {y})"));
+            }
+
 
             match item {
                 FrameItem::Group(group) => {
@@ -228,11 +233,12 @@ impl SVGRenderer {
                     self.render_shape(state.pre_translate(*pos), shape)
                 }
                 FrameItem::Image(image, size, _) => self.render_image(image, size),
-                FrameItem::Link(_, _) => unreachable!(),
+                FrameItem::Link(dest, size) => self.render_link((x,y),last_pos.unwrap_or((x,y)),dest, size),
                 FrameItem::Tag(_) => unreachable!(),
             };
 
             self.xml.end_element();
+            last_pos = Some((x,y));
         }
 
         self.xml.end_element();
